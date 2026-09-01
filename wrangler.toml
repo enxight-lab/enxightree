@@ -1,0 +1,25 @@
+# Cloudflare Workers Static Assets — map.enxight.com (K-RE MAP)
+# ENXIGHT-HOMEPAGE 와 동일한 "Static Assets only" 흐름. (핸드오프의 CF Pages 안 대신
+# Workers 채택 — 패밀리가 Pages source-repo 변경 미지원 이슈로 전환한 전력. ADR-0002)
+#
+# 배포: `npm run build` 후 `npx wrangler deploy`
+# Custom domain: routes custom_domain=true — 같은 계정에 enxight.com zone 있어 DNS 자동 생성 (2c)
+#
+# 2d: worker/index.js 가 /api/news (네이버 프록시) 처리, 그 외는 정적 자산.
+# NAVER_CLIENT_ID/SECRET 은 `wrangler secret put` — 코드·repo 에 절대 없음.
+
+name = "enxight-kremap"
+main = "worker/index.js"
+compatibility_date = "2024-11-06"
+
+routes = [
+  { pattern = "map.enxight.com", custom_domain = true }
+]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+# enxight.com/map·/pulse iframe 임베드 허용 — 정적 자산도 worker 를 거쳐
+# X-Frame-Options(cf 자동 부여) 제거 + CSP frame-ancestors 로 대체 (2026-06-11)
+run_worker_first = true

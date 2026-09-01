@@ -1,0 +1,80 @@
+# K-RE MAP 데이터 자동 갱신 (HANDOFF §4)
+# 매일 06:00 KST (= UTC 21:00) — R-ONE 지수 + 실거래가 수집 → data.json 커밋 → 배포
+#
+# repo Secrets 필요:
+#   DATA_GO_API_KEY, REP_API_KEY            (수집 — 2b)
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID  (배포 — 2c에서 추가, 없으면 배포 스텝 skip)
+
+name: data-refresh
+
+on:
+  schedule:
+    - cron: "0 21 * * *" # 06:00 KST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    env:
+      CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Collect data (R-ONE + 실거래가)
+        env:
+          DATA_GO_API_KEY: ${{ secrets.DATA_GO_API_KEY }}
+          REP_API_KEY: ${{ secrets.REP_API_KEY }}
+        # P2 자가치유(2026-07-07): R-ONE/실거래 API 산발적 순단(RemoteDisconnected)이
+        # 7/3·7/5·7/6 발행을 죽여 매번 수동 재트리거로만 회복 → in-run 재시도로 자동화.
+        # http_json 내부 재시도(4·8s)로도 못 넘긴 blip 은 몇 분이면 지나가므로 180s 후 1회 재실행.
+        run: |
+          python scripts/build_data.py || {
+            echo "::warning::1차 수집 실패 — 180s 후 자동 재시도 (외부 API 순단 대비)"
+            sleep 180
+            python scripts/build_data.py
+          }
+
+      - name: Commit data.json if changed
+        run: |
+          git config user.name "kremap-bot"
+          git config user.email "actions@github.com"
+          git add public/data.json
+          if git diff --cached --quiet; then
+            echo "no data change"
+          else
+            git commit -m "data: $(TZ=Asia/Seoul date +%F) 자동 갱신 (R-ONE + 실거래가)"
+            # 동시 push 대비 (수집 중 다른 커밋이 main 에 올라온 경우) — data.json 만 만지므로 rebase 안전
+            git pull --rebase origin main
+            git push
+          fi
+
+      - name: Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Deploy to Cloudflare (2c — 토큰 등록 후 활성)
+        if: ${{ env.CF_TOKEN != '' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Telegram alert on failure
+        if: ${{ failure() }}
+        env:
+          TG_TOKEN: ${{ secrets.ENXIGHT_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.ENXIGHT_TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_TOKEN" ] && { echo "no telegram secret — skip"; exit 0; }
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="$TG_CHAT" \
+            --data-urlencode text="🚨 K-RE MAP data-refresh 실패 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" > /dev/null
+          echo "telegram alert sent"

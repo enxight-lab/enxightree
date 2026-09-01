@@ -1,0 +1,17 @@
+name: pulse-analyze
+
+# 수동 전용 — pulse 이력 분포를 분석해 z-score 시그널 임계·정의를 데이터로 확정.
+# 발행 파이프라인과 무관(읽기 전용 GET), Secrets 불필요.
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: pulse 이력 분포 분석
+        run: python scripts/analyze_pulse_dist.py

@@ -1,0 +1,35 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Temporary
+*.tmp
+*.temp
+*.bak
+*.before-*.bak
+
+# Python (scripts/build_data.py 실행 캐시)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Vite
+node_modules/
+dist/
+.npm
+
+# Cloudflare Workers 로컬 빌드/배포 캐시
+.wrangler/
+
+# Environment (절대 커밋 금지 — API 키는 배치/Worker 측에만)
+.env
+.env.*
+!.env.example

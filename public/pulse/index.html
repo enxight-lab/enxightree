@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ENXIGHT 마켓 펄스</title>
+<meta name="description" content="글로벌 8지역 뉴스 밀도·가격·온도차를 한 화면에. See what others miss.">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Spectral:wght@500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+:root{
+  /* Harbor 패밀리 다크 토큰 (HOMEPAGE harbor.css [data-theme=dark] 정합 — 2026-06-11) */
+  --ink:#0E141C; --surface:#19222E; --line:#323F4F;
+  --text:#E9EDF2; --muted:#AAB4C0; --faint:#7B8794;
+  --up:#1FC25A; --up-soft:#14392A; --dn:#E8404A; --dn-soft:#3A1A1D;
+  --heat0:#1B2430; --heat1:#3D2E12; --heat2:#7A5410; --heat3:#C98A1B; --heat4:#F2B544;
+  --press:#D9BC96; --quiet:#A78BFA; --brass:#D9BC96; --trend:#3FBF8F; --calm:#7B8794;
+  --mono:'IBM Plex Mono',monospace; --sans:'Pretendard',sans-serif; --serif:'Spectral',Georgia,serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ink);color:var(--text);font-family:var(--sans);overflow-x:hidden}
+.wrap{max-width:880px;margin:0 auto;padding:32px 20px 64px}
+
+/* 마스트헤드 */
+.mast{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;
+      border-bottom:1px solid var(--line);padding-bottom:14px}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand .x{color:var(--brass);font-weight:800;font-size:26px;font-family:var(--mono)}
+.brand h1{font-family:var(--serif);font-size:23px;font-weight:600;letter-spacing:.01em}
+.brand .sub{font-size:12px;color:var(--muted);letter-spacing:.22em;font-family:var(--mono)}
+.updated{font-size:12px;color:var(--faint);font-family:var(--mono)}
+
+/* 탭 */
+.tabs{display:flex;gap:6px;margin:20px 0 18px;flex-wrap:wrap}
+.tabs button{font-family:var(--sans);font-size:14px;padding:7px 18px;border-radius:999px;
+  background:transparent;border:1px solid var(--line);color:var(--muted);cursor:pointer;transition:.15s}
+.tabs button:hover{border-color:var(--muted)}
+html[data-theme="light"]{
+  --ink:#F5F7F8; --surface:#FFFFFF; --line:#D8DEE5;
+  --text:#1F2937; --muted:#5B6776; --faint:#8B95A1;
+  --up:#15A24A; --up-soft:#D9F0E2; --dn:#D5332B; --dn-soft:#F8DFDD;
+  --heat0:#F3EFE7; --heat1:#EBD9B7; --heat2:#DDB878; --heat3:#CC9436; --heat4:#C07A0E;
+  --press:#9C7E4A; --brass:#9C7E4A; --trend:#1A9E73; --calm:#8B95A1;
+}
+.tabs button.on{background:var(--surface);color:var(--text);border-color:var(--up);font-weight:600}
+.tabs button:disabled{opacity:.35;cursor:default}
+.tabs button:focus-visible{outline:2px solid var(--up);outline-offset:2px}
+
+.panel{display:none}.panel.on{display:block}
+.chart{width:100%;height:420px}
+@media(max-width:560px){.chart{height:360px}}
+.note{font-size:12px;color:var(--faint);margin-top:10px;line-height:1.7}
+.note b{color:var(--muted);font-weight:500}
+
+/* 온도차 카드 */
+.gaps{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.gap{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.gap .tag{font-size:11px;font-family:var(--mono);letter-spacing:.1em;padding:2px 8px;border-radius:4px;display:inline-block;margin-bottom:8px}
+.gap.pressure .tag{color:var(--press);border:1px solid var(--press)}
+.gap.quiet .tag{color:var(--quiet);border:1px solid var(--quiet)}
+.gap h3{font-size:15px;font-weight:600;margin-bottom:4px}
+.gap p{font-size:13px;color:var(--muted);font-family:var(--mono)}
+.empty{color:var(--faint);font-size:14px;padding:32px 0;text-align:center}
+.err{color:var(--press);font-size:13px;padding:24px 0;font-family:var(--mono)}
+footer{margin-top:48px;font-size:11px;color:var(--faint);font-family:var(--mono);
+  border-top:1px solid var(--line);padding-top:14px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+footer a{color:var(--muted);text-decoration:none}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+html[data-embedded] #fam-nav{display:none !important}
+html[data-embedded] .mast{display:none !important}
+html[data-embedded] footer{display:none !important}
+html[data-embedded] .wrap{max-width:none;padding:24px 28px 40px}
+@media(max-width:600px){html[data-embedded] .wrap{padding:16px 14px 32px}}
+</style>
+</head>
+<body>
+<script>(function(){var d=document.documentElement;try{if(window.self!==window.top)d.setAttribute("data-embedded","1");}catch(e){d.setAttribute("data-embedded","1");}d.setAttribute("data-theme","light");
+/* 임베드 높이 동기화 — 홈 shell iframe 이 콘텐츠 높이만큼 늘어나 내부 스크롤 없이 창 스크롤로 동작 */
+if(d.hasAttribute("data-embedded")){window.addEventListener("DOMContentLoaded",function(){
+  var post=function(){window.parent.postMessage({type:"enxight:height",height:document.body.scrollHeight},"*");};
+  new ResizeObserver(post).observe(document.body);post();
+});}})();</script>
+<div class="wrap">
+<div id="fam-nav" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding-bottom:10px;margin-bottom:14px;border-bottom:1px solid var(--line)">
+  <a href="https://enxight.com/" style="font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.18em;color:var(--text);text-decoration:none">ENXIGHT</a>
+  <nav style="display:flex;gap:14px;align-items:center;font-size:12px;font-family:var(--sans)">
+    <a href="https://enxight.com/magazine/" style="color:var(--muted);text-decoration:none">Magazine</a>
+    <a href="https://enxight.com/enxighter/" style="color:var(--muted);text-decoration:none">Game</a>
+    <a href="https://enxight.com/enxiview/?view=global" style="color:var(--brass);font-weight:700;text-decoration:none">Charts</a>
+    <a href="https://enxight.com/brand/" style="color:var(--muted);text-decoration:none">Brand</a>
+  </nav>
+</div>
+  <header class="mast">
+    <div class="brand">
+      <span class="x" aria-hidden="true">✕</span>
+      <h1>ENXIGHT</h1>
+      <span class="sub">MARKET PULSE</span>
+    </div>
+    <span class="updated" id="updated">불러오는 중…</span>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="펄스 보기 선택">
+    <button class="on" data-t="news" role="tab" aria-selected="true">뉴스</button>
+    <button data-t="price" role="tab" aria-selected="false">시장</button>
+    <button data-t="gap" role="tab" aria-selected="false">온도차</button>
+    <button data-t="rates" role="tab" aria-selected="false">금리</button>
+    <button data-t="signal" role="tab" aria-selected="false">시그널</button>
+  </nav>
+
+  <section class="panel on" id="p-news" role="tabpanel">
+    <div class="chart" id="c-news"></div>
+    <p class="note"><b>지역 × 테마 기사 밀도</b> · <span id="news-window">최근 24시간</span>, ENXIGHT 수집기 집계 · 진할수록 세계의 시선이 쏠린 곳 · <span style="color:var(--brass)">칸을 누르면 실제 기사</span></p>
+    <div id="news-articles"></div>
+  </section>
+
+  <section class="panel" id="p-price" role="tabpanel">
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <div style="flex:1.3 1 360px;min-width:300px">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">주식 · 지역 시장</div>
+        <div class="chart" id="c-price" style="height:360px"></div>
+      </div>
+      <div style="flex:1 1 300px;min-width:280px;display:flex;flex-direction:column;gap:14px">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">채권 · 국채 수익률 (오늘)</div>
+          <div id="c-bonds" style="height:190px"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">10년물 1년 추이</div>
+          <div id="c-bonds-line" style="height:160px"></div>
+        </div>
+      </div>
+    </div>
+    <p class="note"><b>주식</b> 면적 = 시총 비중 · 초록 상승 / 빨강 하락 (장마감 종가) · <b>채권</b> 한·미·일 국채 수익률 + 전일比 (bp) · 출처 FRED·ECOS·일본 재무성 · <span style="color:var(--brass)">누르면 관련 뉴스</span></p>
+    <div id="market-news"></div>
+  </section>
+
+  <section class="panel" id="p-gap" role="tabpanel">
+    <div id="c-gap" style="height:380px"></div>
+    <p class="note"><b>뉴스 강도(가로) × 가격 움직임(세로) — 각 과거 60일 분포 내 백분위</b> · 임계 85 = 상위 15% · 우하 <span style="color:var(--press)">압력 축적</span> / 좌상 <span style="color:var(--quiet)">조용한 이동</span> / 우상 <span style="color:var(--trend)">추세 확인</span> · <span style="color:var(--brass)">점을 누르면 관련 뉴스</span></p>
+    <div id="gap-news"></div>
+  </section>
+
+  <section class="panel" id="p-rates" role="tabpanel">
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <div id="c-rates-dot" style="flex:1 1 300px;min-width:280px;height:340px"></div>
+      <div id="c-rates-line" style="flex:1.4 1 380px;min-width:300px;height:340px"></div>
+    </div>
+    <p class="note" id="rates-note"><span style="color:var(--brass)">●</span> 정책금리 · <span style="color:var(--brass)">○</span> 10년물 · <span style="opacity:.5">연한 점 = 1년 전</span></p>
+    <div id="rates-news"></div>
+  </section>
+
+  <section class="panel" id="p-signal" role="tabpanel">
+    <div id="c-signal"></div>
+    <p class="note"><b>오늘의 브리핑</b> · 가격·뉴스·온도차를 사람이 읽는 한 줄로 요약 · <span style="color:var(--brass)">줄을 누르면 관련 뉴스</span></p>
+    <div id="signal-news"></div>
+  </section>
+
+  <footer>
+    <span>ENXIGHT — See what others miss. · <a href="/" style="color:var(--muted)">🌳 Enxightree</a> · <a href="https://enxight.com/" style="color:var(--muted)">enxight.com</a></span>
+    <span>데이터: Yahoo Finance · <a href="https://www.gdeltproject.org/" style="color:var(--muted)">GDELT</a>/RSS · 일 1회 07:30 KST 갱신</span>
+  </footer>
+</div>
+
+<script>
+const DATA_URL = 'https://data.enxight.com/pulse.json';
+const charts = {}; // ECharts 인스턴스 보관 — 탭 전환 시 resize용
+const THEME_FALLBACK = ['연준·금리','반도체·AI','중동·지정학','에너지','무역·관세'];
+
+/* 탭 */
+document.querySelectorAll('.tabs button[data-t]').forEach(b=>{
+  b.addEventListener('click',()=>{
+    document.querySelectorAll('.tabs button[data-t]').forEach(x=>{x.classList.remove('on');x.setAttribute('aria-selected','false')});
+    document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');b.setAttribute('aria-selected','true');
+    document.getElementById('p-'+b.dataset.t).classList.add('on');
+    if(charts[b.dataset.t]) charts[b.dataset.t].resize(); // 숨김 상태에서 init된 캔버스 크기 재계산
+    if(b.dataset.t==='rates' && charts.ratesLine) charts.ratesLine.resize(); // 금리 탭 = 차트 2개
+    if(b.dataset.t==='price' && charts.bonds) charts.bonds.resize(); // 시장 탭 = 주식+채권 히트맵
+    if(b.dataset.t==='price' && charts.bondsLine) charts.bondsLine.resize(); // + 채권 추이선
+  });
+});
+
+/* 데이터 로드 */
+fetch(DATA_URL).then(r=>{
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}).then(render).catch(e=>{
+  document.getElementById('updated').textContent='데이터 연결 실패';
+  document.getElementById('p-news').innerHTML='<p class="err">pulse.json을 불러올 수 없습니다 — Worker 배포와 라우팅을 확인해 주세요. ('+e.message+')</p>';
+});
+
+window.addEventListener('resize',()=>Object.values(charts).forEach(c=>c.resize()));
+function render(d){
+  document.getElementById('updated').textContent = d.updated.slice(0,16).replace('T',' ')+' KST 갱신';
+  renderNews(d); renderPrice(d); renderBonds(d); renderBondsLine(d); renderGap(d); renderRates(d); renderSignal(d);
+}
+
+/* ── 뉴스 밀도 히트맵 ── */
+const V=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function renderNews(d){
+  /* 신선도 고지 (2026-08-12) — 뉴스 축은 수집처(GDELT) 호출 한도로 carry-forward 되는 날이 있다.
+     그때 payload 는 news.stale=true·stale_since 를 담아 보내는데 화면이 이를 한 번도 읽지 않아,
+     6일 묵은 히트맵 위에 '최근 24시간' 과 오늘 갱신 시각이 나란히 떠 있었다.
+     헤더(#updated)는 건드리지 않는다 — 가격·금리·채권은 실제로 그 시각에 갱신되기 때문이다. */
+  const nStale = !!(d.news && d.news.stale);
+  const sSince = String((d.news && d.news.stale_since) || '').slice(0, 10);
+  const winEl = document.getElementById('news-window');
+  if (winEl) {
+    winEl.textContent = nStale
+      ? (sSince ? sSince + ' 수집분' : '갱신 지연 중')
+      : '최근 ' + ((d.news && d.news.window_hours) || 24) + '시간';
+    winEl.style.color = nStale ? 'var(--press)' : '';
+  }
+  const oldBanner = document.getElementById('news-stale');
+  if (oldBanner) oldBanner.remove();
+  if (nStale) {
+    const box = document.getElementById('c-news');
+    const b = document.createElement('p');
+    b.id = 'news-stale';
+    b.className = 'err';
+    b.style.padding = '0 0 12px';
+    b.textContent = '⚠ 뉴스 밀도 갱신 지연 — ' + (sSince || '이전') +
+      ' 수집분을 표시 중입니다(수집처 호출 한도). 가격·금리·채권은 정상 갱신됩니다.';
+    box.parentNode.insertBefore(b, box);
+  }
+
+  const themes = d.news.themes || THEME_FALLBACK;
+  const regions = d.price.regions.map(r=>({id:r.id,name:r.name}));
+  const data=[]; let max=1;
+  // 0건도 "0" 표시(공란 제거 — 데이터 부재처럼 보이던 문제). 0 은 옅게(--faint) 위계 구분
+  regions.forEach((r,ri)=>{(d.news.matrix[r.id]||[]).forEach((v,ti)=>{
+    data.push({value:[ti,ri,v], label: v===0?{color:V('--faint')}:undefined});if(v>max)max=v;});});
+  (charts.news = echarts.init(document.getElementById('c-news'))).setOption({
+    grid:{left:64,right:16,top:36,bottom:8},
+    xAxis:{type:'category',data:themes,position:'top',
+      axisLabel:{color:V('--muted'),fontSize:12,fontFamily:'Pretendard'},axisLine:{show:false},axisTick:{show:false}},
+    yAxis:{type:'category',data:regions.map(r=>r.name),inverse:true,
+      axisLabel:{color:V('--text'),fontSize:13,fontFamily:'Pretendard'},axisLine:{show:false},axisTick:{show:false}},
+    visualMap:{show:false,min:0,max:max,
+      inRange:{color:[V('--heat0'),V('--heat1'),V('--heat2'),V('--heat3'),V('--heat4')]}},
+    tooltip:{backgroundColor:V('--surface'),borderColor:V('--line'),textStyle:{color:V('--text'),fontFamily:'Pretendard'},
+      formatter:p=>regions[p.value[1]].name+' · '+themes[p.value[0]]+' — <b>'+p.value[2]+'건</b>'},
+    series:[{type:'heatmap',data:data,
+      label:{show:true,fontFamily:'IBM Plex Mono',fontSize:12,
+        color:V('--text'),formatter:p=>p.value[2]==null?'':p.value[2]},
+      itemStyle:{borderColor:V('--ink'),borderWidth:3,borderRadius:4},
+      emphasis:{itemStyle:{borderColor:V('--brass'),borderWidth:2}}}]
+  });
+  // 셀 클릭 → 해당 지역×테마 실기사 하단 표시 (news.articles, 추가 호출 0)
+  charts.news.off('click');
+  charts.news.on('click', p => {
+    const rg = regions[p.value[1]], ti = p.value[0];
+    showRelated('news-articles', rg.name+' · '+themes[ti], relatedNews(d, rg.id, ti));
+  });
+}
+
+/* ── 관련 뉴스 — 전 탭 공통 (2026-06-15 통일: 항목 클릭 → 바로 아래 같은 디자인) ──
+   relatedNews: news.articles(지역×테마) 재활용. themeIdx 지정 시 그 테마만,
+   null 이면 지역 전 테마 합쳐 상위(url 중복 제거·날짜 내림차순). */
+function relatedNews(d, regionId, themeIdx){
+  const arts = d.news && d.news.articles || {};
+  let list = [];
+  if(themeIdx!=null){ list = (arts[regionId+':'+themeIdx]||[]).slice(); }
+  else { for(let ti=0;ti<5;ti++) (arts[regionId+':'+ti]||[]).forEach(a=>list.push(a)); }
+  const seen=new Set();
+  list = list.filter(a=>a&&a.u&&!seen.has(a.u)&&seen.add(a.u));
+  list.sort((a,b)=>String(b.d||'').localeCompare(String(a.d||'')));
+  return list.slice(0,6);
+}
+/* 금리/채권용 — 금리 테마 우선, 0건이면 그 국가 전 테마 폴백 (오늘 금리 뉴스 0건 대비) */
+function relatedPref(d, regionId, preferTheme){
+  const l = relatedNews(d, regionId, preferTheme);
+  if(l.length) return {list:l, theme:THEME_FALLBACK[preferTheme]};
+  return {list:relatedNews(d, regionId, null), theme:'시장 전반'};
+}
+function showRelated(slotId, label, list){
+  const el = document.getElementById(slotId); if(!el) return;
+  const head = '<div style="display:flex;align-items:baseline;gap:8px;margin:16px 0 8px;'
+    +'padding-top:14px;border-top:1px solid '+V('--line')+'">'
+    +'<span style="font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:'+V('--brass')+'">관련 뉴스</span>'
+    +'<strong style="font-size:13.5px">'+label+'</strong></div>';
+  if(!list.length){
+    el.innerHTML = head + '<p class="empty" style="margin:0">표시할 기사가 없습니다 (다음 집계부터 기사 링크 채워짐)</p>';
+    return;
+  }
+  const fmtD = s => s && s.length>=8 ? s.slice(0,4)+'.'+s.slice(4,6)+'.'+s.slice(6,8) : '';
+  el.innerHTML = head + '<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px">'
+    + list.map(a =>
+        '<li><a href="'+a.u+'" target="_blank" rel="noopener" '
+        +'style="display:flex;gap:10px;align-items:baseline;padding:10px 12px;border-radius:8px;text-decoration:none;color:var(--text);border:1px solid transparent" '
+        +'onmouseover="this.style.background=getComputedStyle(document.documentElement).getPropertyValue(\'--surface\');this.style.borderColor=getComputedStyle(document.documentElement).getPropertyValue(\'--line\')" '
+        +'onmouseout="this.style.background=\'\';this.style.borderColor=\'transparent\'">'
+        +'<span style="flex:1;font-size:13.5px;line-height:1.45">'+(a.t||'(제목 없음)')+'</span>'
+        +'<span style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap">'+(a.s||'')+(a.d?' · '+fmtD(a.d):'')+' ↗</span>'
+        +'</a></li>'
+      ).join('')
+    + '</ul>';
+}
+
+/* ── 가격 트리맵 ── */
+function renderPrice(d){
+  const items = d.price.regions.map(r=>{
+    const c = r.chg===null?V('--line'):colorByChg(r.chg);
+    return {name:r.name, id:r.id, value:r.weight, chg:r.chg, idx:r.index, close:r.close,
+      itemStyle:{color:c,borderColor:V('--ink'),borderWidth:3,gapWidth:3,borderRadius:6}};
+  });
+  (charts.price = echarts.init(document.getElementById('c-price'))).setOption({
+    tooltip:{backgroundColor:V('--surface'),borderColor:V('--line'),textStyle:{color:V('--text'),fontFamily:'Pretendard'},
+      formatter:p=>{const x=p.data;return x.chg===null?x.name+' — 수집 실패':
+        x.name+' · '+x.idx+'<br>종가 <b>'+Number(x.close).toLocaleString()+'</b> · '+(x.chg>0?'▲ +':x.chg<0?'▼ ':'')+x.chg+'%';}},
+    series:[{type:'treemap',roam:false,nodeClick:false,breadcrumb:{show:false},
+      width:'100%',height:'100%',top:0,left:0,
+      label:{fontFamily:'Pretendard',fontSize:14,fontWeight:600,color:V('--text'),
+        formatter:p=>p.data.chg===null?p.name+'\n수집 실패':
+          p.name+'\n'+(p.data.chg>0?'▲ +':p.data.chg<0?'▼ ':'')+p.data.chg+'%'},
+      data:items}]
+  });
+  // 주식 타일 클릭 → 그 지역 전 테마 관련 뉴스 (시장 탭 공통 슬롯)
+  charts.price.off('click');
+  charts.price.on('click', p => {
+    if(!p.data || !p.data.id) return;
+    showRelated('market-news', p.data.name+' · 주식', relatedNews(d, p.data.id, null));
+  });
+}
+/* ── 채권: 한·미·일 × 2y·10y·30y 히트맵 — 색 = 일변동(bp), 칸 = 수익률 (2026-06-15) ── */
+const BOND_COUNTRY = { us:'미국', kr:'한국', jp:'일본' };
+function renderBonds(d){
+  const el = document.getElementById('c-bonds');
+  const b = d.bonds;
+  if(!b){ el.innerHTML='<p class="empty" style="margin:0">채권 데이터 수집 대기 — 다음 집계(매일 07:30 KST)부터</p>'; return; }
+  const cids=['us','kr','jp'], names=cids.map(c=>BOND_COUNTRY[c]);
+  const mats=['2y','10y','30y'], matL=['2Y','10Y','30Y'];
+  const data=[]; let maxAbs=1;
+  cids.forEach((c,ci)=>mats.forEach((m,mi)=>{
+    const o=(b[c]||{})[m];
+    if(o && o.y!=null){
+      const chg = o.chg==null?0:o.chg;
+      data.push({value:[mi,ci,chg], yld:o.y, chg:o.chg});
+      maxAbs = Math.max(maxAbs, Math.abs(chg));
+    } else { data.push({value:[mi,ci,'-'], yld:null, chg:null}); }
+  }));
+  // 색: 수익률 상승(+bp)=dn(빨강)·하락(−bp)=up(초록), 0근처 중립. 진할수록 큰 변동
+  (charts.bonds=echarts.init(el)).setOption({
+    grid:{left:42,right:8,top:28,bottom:6},
+    xAxis:{type:'category',data:matL,position:'top',axisLabel:{color:V('--muted'),fontSize:12,fontFamily:'IBM Plex Mono'},axisLine:{show:false},axisTick:{show:false}},
+    yAxis:{type:'category',data:names,inverse:true,axisLabel:{color:V('--text'),fontSize:13,fontFamily:'Pretendard'},axisLine:{show:false},axisTick:{show:false}},
+    visualMap:{show:false,min:-maxAbs,max:maxAbs,dimension:2,
+      inRange:{color:[V('--up'),V('--up-soft'),V('--surface'),V('--dn-soft'),V('--dn')]}},
+    tooltip:{backgroundColor:V('--surface'),borderColor:V('--line'),textStyle:{color:V('--text'),fontFamily:'Pretendard'},
+      formatter:p=>{const x=p.data;return names[x.value[1]]+' '+matL[x.value[0]]+'<br>수익률 <b>'+(x.yld!=null?x.yld.toFixed(2)+'%':'—')+'</b>'+(x.chg!=null?' · 전일比 '+(x.chg>0?'+':'')+x.chg+'bp':'');}},
+    series:[{type:'heatmap',data,
+      label:{show:true,fontFamily:'IBM Plex Mono',fontSize:12,lineHeight:14,color:V('--text'),
+        formatter:p=>{const x=p.data; if(x.yld==null)return '—'; return x.yld.toFixed(2)+(x.chg==null?'':'\n'+(x.chg>0?'+':'')+x.chg.toFixed(1)+'bp');}},
+      itemStyle:{borderColor:V('--ink'),borderWidth:3,borderRadius:4},
+      emphasis:{itemStyle:{borderColor:V('--brass'),borderWidth:2}}}]
+  });
+  // 셀 클릭 → 그 국가 + 금리 테마(0) 관련 뉴스 (주식 트리맵과 같은 슬롯)
+  charts.bonds.off('click');
+  charts.bonds.on('click', p => { const cid=cids[p.value[1]]; if(!cid)return;
+    const r=relatedPref(d,cid,0); showRelated('market-news', BOND_COUNTRY[cid]+' · '+r.theme, r.list); });
+}
+
+/* ── 채권 10년물 1년 추이 — 히트맵 아래 꺾은선 (한·미·일 3선) ── */
+function renderBondsLine(d){
+  const el=document.getElementById('c-bonds-line');
+  const s = d.bonds && d.bonds.series;
+  if(!s || !s.dates || !s.dates.length){ el.innerHTML='<p class="empty" style="margin:0;font-size:12px">추이 데이터 수집 대기</p>'; return; }
+  const palette={us:V('--dn'), kr:V('--brass'), jp:V('--muted')};
+  const series=['us','kr','jp'].filter(c=>s[c]).map(c=>({
+    name:BOND_COUNTRY[c], type:'line', data:s[c], showSymbol:false, smooth:false, connectNulls:true,
+    lineStyle:{width:1.8,color:palette[c]}, itemStyle:{color:palette[c]}
+  }));
+  (charts.bondsLine=echarts.init(el)).setOption({
+    grid:{left:38,right:10,top:24,bottom:22},
+    legend:{top:0,left:0,textStyle:{color:V('--muted'),fontSize:11,fontFamily:'Pretendard'},itemWidth:14,itemHeight:2,icon:'rect'},
+    tooltip:{trigger:'axis',backgroundColor:V('--surface'),borderColor:V('--line'),textStyle:{color:V('--text'),fontFamily:'Pretendard'},valueFormatter:v=>v==null?'-':v.toFixed(2)+'%'},
+    xAxis:{type:'category',data:s.dates,axisLabel:{color:V('--faint'),fontSize:10,fontFamily:'IBM Plex Mono',formatter:v=>v.slice(2,7)},axisLine:{lineStyle:{color:V('--line')}},axisTick:{show:false}},
+    yAxis:{type:'value',scale:true,axisLabel:{color:V('--faint'),fontSize:10,fontFamily:'IBM Plex Mono',formatter:'{value}%'},splitLine:{lineStyle:{color:V('--line'),opacity:.5}}},
+    series
+  });
+}
+
+function colorByChg(c){
+  const a=Math.min(Math.abs(c)/3,1); // ±3%에서 최대 농도
+  return c>=0
+    ? blend(V('--up-soft'),V('--up'),a)
+    : blend(V('--dn-soft'),V('--dn'),a);
+}
+function blend(h1,h2,t){
+  const a=h1.match(/\w\w/g).map(x=>parseInt(x,16)), b=h2.match(/\w\w/g).map(x=>parseInt(x,16));
+  return '#'+a.map((v,i)=>Math.round(v+(b[i]-v)*t).toString(16).padStart(2,'0')).join('');
+}
+
+/* ── 온도차 카드 ── */
+/* ── 금리 한·미·일 — 좌 점 현황판 + 우 계단 추이 (2026-06-11 추천안) ── */
+const RATE_NAMES = { us:'미국', kr:'한국', jp:'일본' };
+function renderRates(d){
+  const dotEl = document.getElementById('c-rates-dot');
+  const lineEl = document.getElementById('c-rates-line');
+  const rt = d.rates;
+  if(!rt || !rt.snapshot){
+    dotEl.innerHTML = '<p class="err">금리 데이터 수집 대기 — 다음 집계(매일 07:30 KST)부터 표시됩니다.</p>';
+    return;
+  }
+  const cids = ['us','kr','jp'].filter(c=>rt.snapshot[c] && rt.snapshot[c].policy!=null);
+  const names = cids.map(c=>RATE_NAMES[c]);
+  // ── 좌: 점 현황판 — ● 정책 ○ 10y, 연한 점 = 1년 전, 세로 연결선
+  const mk = (key, sym, size, opacity) => ({
+    type:'scatter', symbol: sym, symbolSize: size,
+    data: cids.map((c,i)=>({ value:[i, rt.snapshot[c][key]], itemStyle:{ color:V('--brass'), opacity } })),
+    label: opacity===1 ? { show:true, position: key==='policy'?'left':'right',
+      fontFamily:'IBM Plex Mono', fontSize:11, color:V('--text'),
+      formatter:p=>p.value[1]==null?'':p.value[1].toFixed(2)+'%' } : undefined,
+  });
+  const linkLines = cids.map((c,i)=>{
+    const sn = rt.snapshot[c];
+    return { type:'line', data:[[i,sn.policy_prev],[i,sn.policy]], showSymbol:false,
+      lineStyle:{ color:V('--muted'), width:1, type:'dotted' }, silent:true };
+  });
+  (charts.rates = echarts.init(dotEl)).setOption({
+    grid:{left:46,right:30,top:30,bottom:30},
+    tooltip:{show:false},
+    xAxis:{type:'category',data:names,axisLabel:{color:V('--text'),fontSize:13,fontFamily:'Pretendard',fontWeight:600},axisLine:{lineStyle:{color:V('--line')}},axisTick:{show:false}},
+    yAxis:{type:'value',scale:true,axisLabel:{color:V('--faint'),fontSize:11,fontFamily:'IBM Plex Mono',formatter:'{value}%'},splitLine:{lineStyle:{color:V('--line'),opacity:.5}}},
+    series:[
+      ...linkLines,
+      mk('policy_prev','circle',9,.28), mk('y10_prev','emptyCircle',9,.28),
+      mk('policy','circle',13,1), mk('y10','emptyCircle',13,1),
+    ]
+  });
+  // ── 우: 정책금리 계단 추이
+  const palette = { us:V('--dn'), kr:V('--brass'), jp:V('--muted') };
+  const series = cids.filter(c=>rt.policy[c]).map(c=>({
+    name: RATE_NAMES[c], type:'line', data: rt.policy[c], step:'end', showSymbol:false,
+    lineStyle:{ width:2, color:palette[c] }, itemStyle:{ color:palette[c] },
+  }));
+  (charts.ratesLine = echarts.init(lineEl)).setOption({
+    grid:{left:44,right:16,top:34,bottom:28},
+    legend:{top:2,left:0,textStyle:{color:V('--muted'),fontSize:12,fontFamily:'Pretendard'},itemWidth:16,itemHeight:2,icon:'rect'},
+    tooltip:{trigger:'axis',backgroundColor:V('--surface'),borderColor:V('--line'),textStyle:{color:V('--text'),fontFamily:'Pretendard'},valueFormatter:v=>v==null?'-':v.toFixed(2)+'%'},
+    xAxis:{type:'category',data:rt.dates,axisLabel:{color:V('--faint'),fontSize:11,fontFamily:'IBM Plex Mono',formatter:v=>v.slice(2,7)},axisLine:{lineStyle:{color:V('--line')}},axisTick:{show:false}},
+    yAxis:{type:'value',scale:true,axisLabel:{color:V('--faint'),fontSize:11,fontFamily:'IBM Plex Mono',formatter:'{value}%'},splitLine:{lineStyle:{color:V('--line'),opacity:.5}}},
+    series
+  });
+  // 범례 + 한미 금리차 (설명 생략 — 2026-06-15 사용자 피드백)
+  const us = rt.snapshot.us, kr = rt.snapshot.kr;
+  const gap = (us && kr && us.policy!=null && kr.policy!=null)
+    ? ' · <b>한미차 '+(us.policy - kr.policy).toFixed(2)+'%p</b>' : '';
+  document.getElementById('rates-note').innerHTML =
+    '<span style="color:'+V('--brass')+'">●</span> 정책금리 · <span style="color:'+V('--brass')+'">○</span> 10년물 · '
+    +'<span style="opacity:.5">연한 점 = 1년 전</span>'+gap;
+  // 점 클릭 → 그 국가 + 금리 테마(0) 관련 뉴스
+  charts.rates.off('click');
+  charts.rates.on('click', p => {
+    const cid = cids[p.value[0]]; if(!cid) return;
+    const r = relatedPref(d, cid, 0);
+    showRelated('rates-news', RATE_NAMES[cid]+' · '+r.theme, r.list);
+  });
+}
+
+/* ── 시그널 — 한 줄 브리핑 (signal 블록 → 사람이 읽는 문장) ── */
+function renderSignal(d){
+  const el = document.getElementById('c-signal');
+  const sig = d.signal && d.signal.regions;
+  if(!sig || !Object.keys(sig).length){ el.innerHTML='<p class="empty">시그널 데이터 대기 — 다음 집계(매일 07:30 KST)부터</p>'; return; }
+  const nm={}; d.price.regions.forEach(r=>nm[r.id]=r.name);
+  const ZK={pressure:'압력 축적',quiet:'조용한 이동',trend:'추세 확인'};
+  const ZC={pressure:V('--press'),quiet:V('--quiet'),trend:V('--trend')};
+  const rows = Object.keys(sig).map(rid=>Object.assign({rid,name:nm[rid]||rid},sig[rid]));
+  const brief = [];
+  // ① zone 신호 지역 (강도 상위 3)
+  rows.filter(r=>r.zone && ZK[r.zone]).sort((a,b)=>(b.strength||0)-(a.strength||0)).slice(0,3).forEach(r=>{
+    const top = 100-Math.round(r.p_news||0);
+    const verb = r.zone==='pressure' ? '뉴스가 평소 상위 '+top+'%로 들끓는데 가격은 제자리 — 변동성이 터질 자리'
+      : r.zone==='quiet' ? '뉴스는 잠잠한데 가격이 '+(r.chg>0?'+':'')+(r.chg==null?'':r.chg)+'% 급변 — 수급이 먼저 움직인 신호'
+      : '뉴스·가격이 함께 상위권 — 추세가 확인되는 국면';
+    brief.push({rid:r.rid, name:r.name, text:'<b>'+r.name+'</b> '+ZK[r.zone]+' — '+verb,
+      color:ZC[r.zone]||V('--calm'), chg:r.chg, pct:Math.round(Math.max(r.p_news||0, r.p_price||0))});
+  });
+  // ② zone 신호 없으면 가격 움직임 상위(과거 60일 백분위 60+)
+  if(!brief.length) rows.filter(r=>r.p_price!=null).sort((a,b)=>b.p_price-a.p_price).slice(0,2).forEach(r=>{
+    if(r.p_price<60) return;
+    brief.push({rid:r.rid, name:r.name,
+      text:'<b>'+r.name+'</b> 가격 움직임 과거 상위 '+(100-Math.round(r.p_price))+'% — '+(r.chg>0?'+':'')+(r.chg==null?'':r.chg)+'%',
+      color:r.chg>0?V('--up'):r.chg<0?V('--dn'):V('--muted'), chg:r.chg, pct:Math.round(r.p_price)});
+  });
+  if(!brief.length){ el.innerHTML='<p class="empty">오늘은 도드라지는 신호가 없습니다 — 잔잔한 하루 (표본 누적 중일 수 있음)</p>'; return; }
+  el.innerHTML = '<div style="display:flex;flex-direction:column;gap:1px">'
+    + brief.map(b=>{
+        // 우측 미니 지표: 가격 변동 배지 + 백분위 막대
+        var badge = b.chg==null ? '' :
+          '<span style="font-family:var(--mono);font-size:12.5px;font-weight:600;white-space:nowrap;color:'
+          +(b.chg>0?V('--up'):b.chg<0?V('--dn'):V('--muted'))+'">'
+          +(b.chg>0?'▲':b.chg<0?'▼':'')+(b.chg>0?'+':'')+b.chg.toFixed(2)+'%</span>';
+        var bar = '<div title="백분위 '+b.pct+'" style="width:64px;height:5px;border-radius:3px;background:'+V('--line')+';overflow:hidden">'
+          +'<div style="width:'+b.pct+'%;height:100%;background:'+V('--heat3')+'"></div></div>';
+        return '<div data-region="'+b.rid+'" style="cursor:pointer;padding:14px 14px;border-radius:9px;border:1px solid transparent;display:flex;gap:12px;align-items:center" '
+        +'onmouseover="this.style.background=getComputedStyle(document.documentElement).getPropertyValue(\'--surface\');this.style.borderColor=getComputedStyle(document.documentElement).getPropertyValue(\'--line\')" '
+        +'onmouseout="this.style.background=\'\';this.style.borderColor=\'transparent\'">'
+        +'<span style="width:4px;align-self:stretch;border-radius:2px;background:'+b.color+';flex:none"></span>'
+        +'<span style="flex:1;font-size:14px;line-height:1.5;color:'+V('--text')+'">'+b.text+'</span>'
+        +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none;min-width:66px">'+badge+bar+'</div></div>';
+      }).join('')
+    + '</div>';
+  el.onclick = e => { const row=e.target.closest('[data-region]'); if(!row)return;
+    const b=brief.find(x=>x.rid===row.dataset.region);
+    showRelated('signal-news', b.name, relatedNews(d, b.rid, null)); };
+}
+
+/* ── 온도차 — 2축 산점도 (가로=뉴스 강도 배율, 세로=가격 변동). 7지역 전체 점 ── */
+function renderGap(d){
+  const el=document.getElementById('c-gap');
+  const sig = d.signal && d.signal.regions;
+  if(!sig || !Object.keys(sig).length){
+    el.innerHTML='<p class="err">시그널 데이터 대기 — 다음 집계(매일 07:30 KST)부터 표시됩니다.</p>'; return;
+  }
+  const theta = d.signal.theta || 85;
+  const meta = {}; d.price.regions.forEach(r=>meta[r.id]={name:r.name, w:r.weight||5});
+  const ZONE = {
+    pressure:{c:V('--press'), k:'압력 축적'}, quiet:{c:V('--quiet'), k:'조용한 이동'},
+    trend:{c:V('--trend'), k:'추세 확인'}, calm:{c:V('--calm'), k:'무풍'}
+  };
+  const pts=[];
+  Object.keys(sig).forEach(rid=>{
+    const s=sig[rid];
+    if(s.p_news==null || s.p_price==null) return;           // 두 축 모두 있어야 점
+    const z = ZONE[s.zone] || {c:V('--calm'), k:'관망'};     // zone 미산출(잠정) = 관망
+    const m = meta[rid] || {name:rid, w:5};
+    pts.push({value:[s.p_news, s.p_price], id:rid, name:m.name, zoneK:z.k, col:z.c,
+      chg:s.chg, prov:(s.news_provisional||s.price_provisional),
+      symbolSize: Math.round(10 + Math.sqrt(m.w)*3.4)});     // 가중치 √스케일
+  });
+  (charts.gap=echarts.init(el)).setOption({
+    grid:{left:54,right:24,top:20,bottom:46},
+    tooltip:{backgroundColor:V('--surface'),borderColor:V('--line'),textStyle:{color:V('--text'),fontFamily:'Pretendard'},
+      formatter:p=>{const x=p.data; const dir=x.chg>0?' ▲':x.chg<0?' ▼':'';
+        return '<b>'+x.name+'</b> · '+x.zoneK+'<br>뉴스 '+x.value[0]+'백분위 · 가격 '+x.value[1]+'백분위'+dir
+          +(x.prov?'<br><span style="color:'+V('--faint')+'">※ 표본 누적 중 — 잠정</span>':'');}},
+    xAxis:{type:'value',name:'뉴스 강도 백분위',nameLocation:'middle',nameGap:28,min:0,max:100,
+      nameTextStyle:{color:V('--muted'),fontSize:11},axisLabel:{color:V('--faint'),fontSize:10,fontFamily:'IBM Plex Mono'},
+      splitLine:{lineStyle:{color:V('--line'),opacity:.35}},axisLine:{lineStyle:{color:V('--line')}}},
+    yAxis:{type:'value',name:'가격 움직임 백분위',min:0,max:100,
+      nameTextStyle:{color:V('--muted'),fontSize:11},axisLabel:{color:V('--faint'),fontSize:10,fontFamily:'IBM Plex Mono'},
+      splitLine:{lineStyle:{color:V('--line'),opacity:.35}}},
+    series:[{type:'scatter',data:pts,
+      symbolSize:(v,p)=>p.data.symbolSize,
+      itemStyle:{color:p=>p.data.col,opacity:.85,borderColor:V('--ink'),borderWidth:1},
+      label:{show:true,position:'top',formatter:p=>p.data.name,color:V('--text'),fontSize:11,fontFamily:'Pretendard'},
+      markLine:{silent:true,symbol:'none',label:{show:true,position:'insideEndTop',formatter:'상위 15%',color:V('--faint'),fontSize:10},
+        lineStyle:{color:V('--faint'),type:'dashed',opacity:.55},
+        data:[{xAxis:theta},{yAxis:theta}]}}]
+  });
+  charts.gap.off('click');
+  charts.gap.on('click', p=>{ const x=p.data; showRelated('gap-news', x.name+' · '+x.zoneK, relatedNews(d, x.id, null)); });
+}
+</script>
+</body>
+</html>

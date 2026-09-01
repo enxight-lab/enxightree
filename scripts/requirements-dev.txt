@@ -1,0 +1,2 @@
+# 개발(일회성 생성) 전용 의존성 — 런타임 배치(build_data.py)는 표준 라이브러리만 사용 (의존성 0)
+PublicDataReader  # scripts/gen_lawd_codes.py — 법정동코드 → lawd_codes.json 재생성 시에만

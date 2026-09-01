@@ -1,0 +1,15 @@
+/* K-RE MAP — Harbor 패밀리룩 (다크 고정)
+   색·서체 SSoT 는 src/lib/utils.js 의 C 팔레트 (Harbor 다크 토큰 추출 —
+   원본: ENXIGHT-HOMEPAGE styles/harbor.css [data-theme=dark]). 여기는 폰트·베이스만. */
+
+@font-face {
+  font-family: "Pretendard Variable";
+  src: url("/fonts/PretendardVariable.ttf") format("truetype-variations");
+  font-weight: 45 920;
+  font-display: swap;
+}
+
+html, body, #root { margin: 0; padding: 0; }
+/* 초기 페인트 — JS(setTheme)가 곧바로 덮어씀. 시스템 테마 추종으로 깜빡임 최소화 */
+body { background: #0E141C; }
+@media (prefers-color-scheme: light) { body { background: #F5F7F8; } }

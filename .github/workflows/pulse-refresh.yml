@@ -1,0 +1,39 @@
+# Market Pulse 자동 집계 (GAS 원안 → Actions 대체, docs/PULSE_SETUP.md)
+# 매일 07:30 KST — Yahoo 가격 + GDELT 뉴스 밀도 + 온도차 → data.enxight.com (KV)
+# git 커밋 없음 (산출물이 KV 로 감) — checkout + python 만의 경량 잡.
+# Secrets: PULSE_TOKEN (+ 실패 알림용 텔레그램 2종은 data-refresh 와 공유)
+
+name: pulse-refresh
+
+on:
+  schedule:
+    - cron: "30 22 * * *" # 07:30 KST
+  workflow_dispatch:
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build & push pulse
+        env:
+          PULSE_TOKEN: ${{ secrets.PULSE_TOKEN }}
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          BOK_ECOS_API_KEY: ${{ secrets.BOK_ECOS_API_KEY }}
+        run: python scripts/build_pulse.py
+
+      - name: Telegram alert on failure
+        if: ${{ failure() }}
+        env:
+          TG_TOKEN: ${{ secrets.ENXIGHT_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.ENXIGHT_TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_TOKEN" ] && { echo "no telegram secret — skip"; exit 0; }
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="$TG_CHAT" \
+            --data-urlencode text="🟠 Market Pulse 집계 실패 — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" > /dev/null

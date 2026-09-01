@@ -1,0 +1,16 @@
+# ENXIGHT Market Pulse — 데이터 Worker (data.enxight.com)
+# Apps Script(일 07:30 KST)가 POST → KV 저장 → 프론트(map.enxight.com/pulse)가 GET.
+# 시크릿: PULSE_TOKEN (`npx wrangler secret put PULSE_TOKEN` — GAS 스크립트 속성과 동일 값)
+# 배포: 이 디렉터리에서 `npx wrangler deploy`
+
+name = "enxight-pulse"
+main = "index.js"
+compatibility_date = "2024-11-06"
+
+routes = [
+  { pattern = "data.enxight.com", custom_domain = true }
+]
+
+[[kv_namespaces]]
+binding = "PULSE_KV"
+id = "cccf3773fc0f40a895228ea3e39cb6a1"

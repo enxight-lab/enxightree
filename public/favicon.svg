@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- ENXIGHT 오방(五方) 배지 — 패밀리 마크 단일화 (2026-06-11 사용자 결정).
+       구 Enxightree "드릴다운 가지" 마크는 사용 중단 (git 이력 보존).
+       원본 SSoT: ENXIGHT-HOMEPAGE assets/logo/v4/enxight/mark.svg -->
+  <defs><clipPath id="enx-clip"><rect x="4" y="4" width="92" height="92" rx="18"/></clipPath></defs>
+  <rect width="100" height="100" rx="22" fill="#F9FAFB"/>
+  <g clip-path="url(#enx-clip)">
+    <g transform="rotate(12 50 50)">
+      <polygon points="50,50 -60,-60 160,-60" fill="#1A1E26"/>
+      <polygon points="50,50 160,-60 160,160" fill="#2C4A6E"/>
+      <polygon points="50,50 160,160 -60,160" fill="#7E2E2E"/>
+      <polygon points="50,50 -60,160 -60,-60" fill="#B5871E"/>
+    </g>
+    <g transform="rotate(12 50 50)" stroke="#F9FAFB" stroke-width="15" stroke-linecap="round">
+      <line x1="0" y1="0" x2="100" y2="100"/>
+      <line x1="100" y1="0" x2="0" y2="100"/>
+    </g>
+  </g>
+</svg>

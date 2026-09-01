@@ -1,0 +1,119 @@
+# 라이브 데이터 신선도 가드 (HANDOFF_NEXT §1-3)
+# 매일 10:00 KST — map.enxight.com 의 data.json 을 점검해 이상이면 실패 → 텔레그램.
+# cron 수집(06:00)·배포가 무음 실패하는 시나리오의 이중 감시.
+# 주의: 라이브 핑은 브라우저 UA 필수 (cf 가 기본 UA 403).
+#
+# ⚠️ R66(2026-08-03) 교훈으로 강화 — data-refresh 가 7/31·8/3 이틀 실패해 데이터가
+#    2일 고착됐는데도 이 감시는 **매일 success** 였다. 임계 72h 가 일 1회 갱신 데이터엔
+#    너무 느슨해, 이틀을 통째로 못 보고 지나쳤다(감시가 있는데 안 잡히는 게 최악).
+#    ① 임계 72h → 40h (하루 갱신 + 1회 실패까지만 관용, 이틀째엔 반드시 운다)
+#    ② 외부 API 엔드포인트 직접 헬스체크 — 평문 http 폐지 같은 변경을 데이터가 늙기
+#       전에, 발행 실패를 기다리지 않고 잡는다 (R66 은 증상이 '무응답'이라 늦게 보였다)
+#    ③ trade_carried(부분 성공으로 거래 지표를 이어받은 상태)가 연속되면 경보 —
+#       지수만 갱신되며 겉보기 신선도는 통과하지만 거래 지표는 늙고 있는 상태를 포착
+
+name: freshness-check
+
+on:
+  schedule:
+    - cron: "0 1 * * *" # 10:00 KST
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check live data age
+        env:
+          DATA_GO_API_KEY: ${{ secrets.DATA_GO_API_KEY }}
+          REP_API_KEY: ${{ secrets.REP_API_KEY }}
+        run: |
+          python3 - <<'EOF'
+          import json, sys, time, urllib.parse, urllib.request
+          from datetime import datetime, timedelta, timezone
+          UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/126.0"}
+          fails, warns = [], []
+          # 1) Enxightree 부동산 data.json (40h — 일 1회 갱신 + 1회 실패까지만 관용, R66)
+          d = json.load(urllib.request.urlopen(urllib.request.Request(
+              "https://map.enxight.com/data.json", headers=UA), timeout=30))
+          age = (datetime.now(timezone.utc) - datetime.fromisoformat(d["generated_at"])).total_seconds() / 3600
+          asof = d.get("asof") or {}
+          print(f"realty: generated_at={d['generated_at']} · age={age:.1f}h · source={d['source']} "
+                f"· trade_ym={asof.get('trade_ym')} · carried={asof.get('trade_carried')}")
+          if d["source"] != "rone+datago":
+              fails.append("부동산: 샘플 데이터 서빙 중")
+          if age > 40:
+              fails.append(f"부동산: {age:.0f}h 경과 (>40h)")
+          # 1-b) 부분 성공(거래 지표 이어받기) 상태 — 지수만 신선해 age 는 통과하지만
+          #      거래 지표는 늙는다. 이틀 이상 이어지면 실거래가 API 가 계속 죽은 것.
+          if asof.get("trade_carried"):
+              warns.append(f"부동산: 거래 지표 이어받기 중(trade_ym={asof.get('trade_ym')}) — 실거래가 API 점검 필요")
+          # 1-c) 외부 API 엔드포인트 직접 헬스체크 (R66 — 평문 http 폐지를 조기 포착)
+          # ⚠️ 반드시 **실제 키로** 호출한다. 키 없이 '도달성만' 보려던 첫 판(2026-08-03)은
+          #    즉시 오탐을 냈다 — 국토부는 키 없는 요청에 응답 자체를 주지 않아(20s 타임아웃)
+          #    정상인 API 를 장애로 신고했다. R-ONE 은 키 없이도 에러 JSON 을 준다(비대칭).
+          #    감시의 오탐은 알림 피로를 낳아 진짜 경보를 묻으므로, 실호출로만 판정한다.
+          import os
+          go_key = os.environ.get("DATA_GO_API_KEY", "")
+          rep_key = os.environ.get("REP_API_KEY", "")
+          prev_ym = (datetime.now(timezone.utc).replace(day=1) - timedelta(days=1)).strftime("%Y%m")
+          probes = []
+          if rep_key:
+              probes.append(("R-ONE", "https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do?" +
+                             urllib.parse.urlencode({"KEY": rep_key, "Type": "json", "STATBL_ID": "A_2024_00045",
+                                                     "DTACYCLE_CD": "MM", "START_WRTTIME": "202601",
+                                                     "END_WRTTIME": "202601", "pIndex": 1, "pSize": 1})))
+          if go_key:
+              probes.append(("국토부", "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev?" +
+                             urllib.parse.urlencode({"serviceKey": go_key, "LAWD_CD": "11680",
+                                                     "DEAL_YMD": prev_ym, "numOfRows": 1, "pageNo": 1})))
+          if not probes:
+              print("api: 키 미주입 — 엔드포인트 헬스체크 skip")
+          # 2026-08-21 재시도 신설 — 단발 프로브가 열흘간 3회(8/15 R-ONE·8/16 양쪽·8/20 국토부)
+          # 순수 오탐을 냈다: 매번 실수집(data-refresh)은 성공·데이터 age 5h 미만으로 신선했는데
+          # 프로브만 20s 타임아웃에 걸려 🟠 경보 발송. 공공 게이트웨이는 순간 지연이 일상이라
+          # 단발 판정은 이 파일 스스로 경계한 '알림 피로' 를 만든다. 2회 시도(간격 15s)로
+          # 순간 지연은 흡수하고, 진짜 R66 유형(엔드포인트 변경 = 지속 실패)은 여전히 잡힌다.
+          for name, url in probes:
+              last_err = None
+              for attempt in (1, 2):
+                  t0 = time.time()
+                  try:
+                      urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=25).read(512)
+                      print(f"api {name}: OK ({time.time()-t0:.1f}s, 시도 {attempt})")
+                      last_err = None
+                      break
+                  except Exception as e:
+                      last_err = e
+                      print(f"api {name}: 시도 {attempt} 실패 {type(e).__name__} ({time.time()-t0:.1f}s)")
+                      if attempt == 1:
+                          time.sleep(15)
+              if last_err is not None:
+                  fails.append(f"{name} API 실호출 2회 연속 실패({type(last_err).__name__}) — 엔드포인트·스킴 변경 의심 (R66 유형)")
+          # 2) Market Pulse (30h — 일 1회 + 여유. KV 직서빙이라 배포 무관)
+          try:
+              p = json.load(urllib.request.urlopen(urllib.request.Request(
+                  "https://data.enxight.com/pulse.json", headers=UA), timeout=30))
+              page = (datetime.now(timezone.utc) - datetime.fromisoformat(p["updated"])).total_seconds() / 3600
+              print(f"pulse: updated={p['updated']} · age={page:.1f}h")
+              if page > 30:
+                  fails.append(f"펄스: {page:.0f}h 경과 (>30h)")
+          except Exception as e:
+              fails.append(f"펄스: 조회 실패 {e}")
+          if warns:
+              print("::warning::" + " · ".join(warns))
+          if fails:
+              sys.exit("FAIL: " + " · ".join(fails))
+          print("OK: 신선도·엔드포인트 이상 없음")
+          EOF
+
+      - name: Telegram alert on failure
+        if: ${{ failure() }}
+        env:
+          TG_TOKEN: ${{ secrets.ENXIGHT_TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.ENXIGHT_TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_TOKEN" ] && { echo "no telegram secret — skip"; exit 0; }
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode chat_id="$TG_CHAT" \
+            --data-urlencode text="🟠 K-RE MAP 감시 경보 (신선도 40h 초과·샘플 서빙·외부 API 실호출 실패 중 하나) — ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" > /dev/null
