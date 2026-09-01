@@ -10,6 +10,14 @@ on:
     - cron: "30 22 * * *" # 07:30 KST
   workflow_dispatch:
 
+# ⚠️2026-09-02 신설 — 지연 실행·수동 dispatch 가 cron 과 겹치면
+#   두 런이 같은 KV·repo 를 동시에 건드리고 GDELT 를 중복 호출한다.
+#   9/1 에 구·신 repo 가 같은 날 pulse 를 돌려 GDELT 스로틀을 실제로 겪었다.
+#   매거진 6종과 같은 패턴 — 진행 중인 런을 죽이지 않고 대기시킨다.
+concurrency:
+  group: pulse-refresh
+  cancel-in-progress: false
+
 jobs:
   pulse:
     runs-on: ubuntu-latest
