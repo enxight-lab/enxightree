@@ -60,6 +60,13 @@ jobs:
           npm ci
           npm run build
 
+      # ⚠️2026-09-01 — 토큰이 **빈 값**이어도 런은 초록이었다(스텝만 skip).
+      #   「성공했는데 배포가 안 된」 상태를 눈으로 못 잡는다. 경고를 남긴다.
+      - name: ⚠️ 배포 skip 경고 (CF 토큰 없음)
+        if: ${{ env.CF_TOKEN == '' }}
+        run: |
+          echo "::warning::CLOUDFLARE_API_TOKEN 이 비어 있어 배포를 건너뛴다 —           data.json 은 갱신됐지만 map.enxight.com 에는 반영되지 않는다."
+
       - name: Deploy to Cloudflare (2c — 토큰 등록 후 활성)
         if: ${{ env.CF_TOKEN != '' }}
         env:
