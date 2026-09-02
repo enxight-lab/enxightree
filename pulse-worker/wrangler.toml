@@ -14,3 +14,9 @@ routes = [
 [[kv_namespaces]]
 binding = "PULSE_KV"
 id = "cccf3773fc0f40a895228ea3e39cb6a1"
+
+# 외부 heartbeat (2026-09-02 신설) — GitHub Actions 밖에서 도는 유일한 감시.
+# 03:00 UTC = 12:00 KST — data-refresh(06:00)·pulse-refresh(07:30) 뒤,
+# GHA 상시 지연 1~2h 을 감안해 여유를 둔 시각이다.
+[triggers]
+crons = ["0 3 * * *"]

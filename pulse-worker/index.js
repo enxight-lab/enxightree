@@ -16,6 +16,105 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
 
+// ── 외부 heartbeat (2026-09-02 신설) ───────────────────────────────────────
+// 왜 여기인가: 감시자 4종(routine-health·freshness-check·OPS collect·secret-audit)이
+//   전부 GitHub Actions 에 얹혀 있었다. 8/31 Actions 가 과금으로 전면 차단되자
+//   **데이터도 죽고 알림도 같이 죽어** pulse 결번을 9/2 에야 발견했다.
+//   이 Worker 는 Cloudflare 인프라라 GitHub 쿼터·결제와 무관하다 — 그날에도 살아 있었다.
+// 설계 원칙:
+//   ① 정상일 땐 침묵한다. routine_health 가 이미 매일 다이제스트를 보내므로
+//      여기서 또 보내면 「경보가 정상 알림에 묻히는」 기존 문제를 되풀이한다.
+//   ② 대신 매 실행 결과를 KV `heartbeat:last` 에 남긴다. Actions 쪽 감시가
+//      이 값의 신선도를 보면 **서로가 서로를 감시**하는 구조가 된다.
+//   ③ 실패해도 절대 throw 하지 않는다 — heartbeat 가 죽어서 알림이 끊기면 본말전도다.
+
+// ⚠️펄스는 **KV 를 직접 읽는다.** 이 Worker 가 자기 도메인(data.enxight.com)을
+//   fetch 하면 루프가 되어 522 가 난다(2026-09-02 실측 — 첫 실행에서 바로 걸렸다).
+//   외부 도메인만 HTTP 로 본다.
+const HB_TARGETS = [
+  // [이름, URL, 시각필드, 허용시간(h)]
+  // 허용치는 「일 1회 갱신 + GHA 지연 2h + 1회 실패까지」를 기준으로 잡았다.
+  ['부동산', 'https://map.enxight.com/data.json', 'generated_at', 40],
+];
+
+async function hbCheckPulseKV(env) {
+  const raw = await env.PULSE_KV.get('pulse:latest');
+  if (!raw) return { name: '펄스', ok: false, detail: 'KV pulse:latest 없음' };
+  const age = hbAgeHours(JSON.parse(raw).updated);
+  return {
+    name: '펄스', ok: age !== null && age < 30,
+    detail: age === null ? 'updated 파싱 실패' : `${age.toFixed(1)}h / 30h`,
+  };
+}
+
+function hbAgeHours(iso) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  return (Date.now() - t) / 3600000;
+}
+
+async function hbCheckLatestIssue() {
+  // 매거진 발행이 멎었는지 — archive.json 의 최신 **정식** 호(백필 제외) 나이를 본다.
+  const r = await fetch('https://enxight.com/data/archive.json', {
+    headers: { 'User-Agent': 'enxight-heartbeat' },
+  });
+  if (!r.ok) return { name: '발행', ok: false, detail: `archive.json HTTP ${r.status}` };
+  const issues = (await r.json()).issues || [];
+  const real = issues.filter((e) => !e.backfill && e.issue_id).map((e) => e.issue_id).sort();
+  const last = real[real.length - 1];
+  if (!last) return { name: '발행', ok: false, detail: '정식 호가 하나도 없음' };
+  // issue_id 는 YYYY-MM-DD 또는 YYYY-MM-DD-monthly/-weekly
+  const age = hbAgeHours(last.slice(0, 10) + 'T00:00:00+09:00');
+  // 주말·공휴일 결장이 정상이므로 관용치를 크게 잡는다(4일).
+  return { name: '발행', ok: age !== null && age < 96, detail: `최신 ${last} (${age === null ? '?' : age.toFixed(0)}h)` };
+}
+
+async function hbRun(env) {
+  const results = [];
+  for (const [name, url, key, maxH] of HB_TARGETS) {
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': 'enxight-heartbeat' } });
+      if (!r.ok) { results.push({ name, ok: false, detail: `HTTP ${r.status}` }); continue; }
+      const age = hbAgeHours((await r.json())[key]);
+      results.push({
+        name, ok: age !== null && age < maxH,
+        detail: age === null ? `${key} 파싱 실패` : `${age.toFixed(1)}h / ${maxH}h`,
+      });
+    } catch (e) {
+      results.push({ name, ok: false, detail: `${e.name}: ${String(e.message).slice(0, 60)}` });
+    }
+  }
+  try {
+    results.push(await hbCheckPulseKV(env));
+  } catch (e) {
+    results.push({ name: '펄스', ok: false, detail: `${e.name}` });
+  }
+  try {
+    results.push(await hbCheckLatestIssue());
+  } catch (e) {
+    results.push({ name: '발행', ok: false, detail: `${e.name}` });
+  }
+  return results;
+}
+
+async function hbNotify(env, bad) {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chat = env.TELEGRAM_CHAT_ID;
+  if (!token || !chat) return 'secret 미설정';
+  const lines = bad.map((b) => `· ${b.name}: ${b.detail}`).join('\n');
+  const text =
+    '🔴 ENXIGHT heartbeat (Cloudflare)\n' +
+    'GitHub Actions 밖에서 도는 감시다. Actions 가 죽어도 이건 운다.\n\n' +
+    lines +
+    '\n\n확인: https://data.enxight.com/heartbeat.json';
+  const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true }),
+  });
+  return r.ok ? 'sent' : `telegram HTTP ${r.status}`;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -80,7 +179,43 @@ export default {
       });
     }
 
+    // 상호 감시용 — Actions 쪽 감시가 이 값의 신선도를 보면 서로를 감시하게 된다.
+    if (request.method === 'GET' && url.pathname === '/heartbeat.json') {
+      const raw = await env.PULSE_KV.get('heartbeat:last');
+      if (!raw) return json({ error: 'no heartbeat yet' }, 404);
+      return new Response(raw, {
+        headers: { ...CORS, 'Content-Type': 'application/json; charset=utf-8',
+                   'Cache-Control': 'public, max-age=60' },
+      });
+    }
+
     return json({ error: 'not found' }, 404);
+  },
+
+  // Cron Trigger — wrangler.toml 의 [triggers] crons 참조.
+  // ⚠️절대 throw 하지 않는다. heartbeat 가 죽어 알림이 끊기면 본말전도다.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      let results = [];
+      let notify = 'skipped';
+      try {
+        results = await hbRun(env);
+        const bad = results.filter((r) => !r.ok);
+        if (bad.length) notify = await hbNotify(env, bad);
+        else notify = 'ok(무음)';
+      } catch (e) {
+        results = [{ name: 'heartbeat', ok: false, detail: `${e.name}: ${e.message}` }];
+        try { notify = await hbNotify(env, results); } catch (_) { notify = 'notify 실패'; }
+      }
+      const payload = {
+        checked_at: new Date().toISOString(),
+        cron: event.cron,
+        ok: results.every((r) => r.ok),
+        notify,
+        results,
+      };
+      try { await env.PULSE_KV.put('heartbeat:last', JSON.stringify(payload)); } catch (_) {}
+    })());
   },
 };
 
